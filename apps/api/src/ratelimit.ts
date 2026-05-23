@@ -1,10 +1,12 @@
 import { getConnInfo } from '@hono/node-server/conninfo';
 import type { Context, MiddlewareHandler, Next } from 'hono';
 import ipaddr from 'ipaddr.js';
+import { getRateLimitStore } from './ratelimit-store.js';
 
 /**
- * In-memory fixed-window rate limiter. Single-instance only — counters live in this
- * process and do not span replicas (Redis-backed limiting is a later tier).
+ * Fixed-window rate limiter. The counter store is pluggable (see ratelimit-store.ts):
+ * the OSS default keeps counters in-process (single instance); the managed layer injects
+ * a Redis-backed store that spans replicas.
  *
  * Keyed by the client's socket address, not the bearer token (a single-tenant deploy
  * shares one token, and an unvalidated token is attacker-rotatable — both make a token
@@ -14,22 +16,6 @@ import ipaddr from 'ipaddr.js';
  */
 
 const WINDOW_MS = 60_000;
-
-interface Window {
-  count: number;
-  resetAt: number;
-}
-
-const windows = new Map<string, Window>();
-
-// Evict stale windows so the map cannot grow unbounded under churning keys.
-const sweeper = setInterval(() => {
-  const now = Date.now();
-  for (const [key, w] of windows) {
-    if (w.resetAt <= now) windows.delete(key);
-  }
-}, WINDOW_MS);
-sweeper.unref();
 
 function limit(): number {
   const n = Number(process.env.RATE_LIMIT_RPM ?? 60);
@@ -55,16 +41,10 @@ export const rateLimit: MiddlewareHandler = async (c: Context, next: Next) => {
   if (max <= 0) return next();
 
   const key = clientKey(c);
-  const now = Date.now();
-  let w = windows.get(key);
-  if (!w || w.resetAt <= now) {
-    w = { count: 0, resetAt: now + WINDOW_MS };
-    windows.set(key, w);
-  }
-  w.count += 1;
+  const { count, resetAt } = await getRateLimitStore().hit(key, WINDOW_MS);
 
-  if (w.count > max) {
-    const retryAfter = Math.ceil((w.resetAt - now) / 1000);
+  if (count > max) {
+    const retryAfter = Math.ceil((resetAt - Date.now()) / 1000);
     c.header('Retry-After', String(retryAfter));
     return c.json({ error: 'rate limit exceeded' }, 429);
   }
@@ -73,5 +53,5 @@ export const rateLimit: MiddlewareHandler = async (c: Context, next: Next) => {
 
 /** Test seam: clear all rate-limit windows between cases. */
 export function _resetRateLimit(): void {
-  windows.clear();
+  getRateLimitStore().reset?.();
 }
