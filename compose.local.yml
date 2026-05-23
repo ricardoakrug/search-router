@@ -1,0 +1,15 @@
+# Local OSS run: the router API with your own provider keys from .env.
+#
+#   cp env.example .env   # fill in the keys you have
+#   docker compose -f compose.local.yml up --build
+#
+# The API reads provider keys from the environment (bring your own keys);
+# nothing leaves your machine.
+
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - '8787:8787'
