@@ -5,15 +5,28 @@ import type {
   ProviderCreds,
   SearchRequest,
   SearchResponse,
+  SearchResultItem,
 } from '../types.js';
 import { fetchJson, requireKey } from './http.js';
 
 interface LibSearchBody {
   results?: { id: string; title?: string; description?: string }[];
 }
+interface CodeSnippet {
+  codeTitle?: string;
+  codeDescription?: string;
+  pageTitle?: string;
+  codeList?: { language?: string; code?: string }[];
+}
+interface InfoSnippet {
+  pageId?: string;
+  breadcrumb?: string;
+  content?: string;
+}
 interface ContextBody {
-  // GET /api/v2/context returns { data }, where data is the docs payload (text or object).
-  data?: string | { content?: string };
+  // GET /api/v2/context?type=json returns structured snippets (default type=txt is raw markdown).
+  codeSnippets?: CodeSnippet[];
+  infoSnippets?: InfoSnippet[];
 }
 
 const BASE = 'https://context7.com/api/v2';
@@ -53,26 +66,45 @@ export const context7Adapter: ProviderAdapter = {
       };
     }
 
-    // 2. fetch docs/context for that library id
+    // 2. fetch docs/context for that library id. type=json returns structured snippets;
+    // the default (type=txt) is raw markdown, which fetchJson can't parse.
     const ctx = await fetchJson<ContextBody>(
       'context7',
-      `${BASE}/context?${new URLSearchParams({ libraryId: lib.id, query: req.query }).toString()}`,
+      `${BASE}/context?${new URLSearchParams({ libraryId: lib.id, query: req.query, type: 'json' }).toString()}`,
       { headers: auth },
     ).catch((e) => {
       throw new ProviderError('context7', 'context fetch failed', e);
     });
 
-    const content = typeof ctx.data === 'string' ? ctx.data : ctx.data?.content;
+    const libUrl = `https://context7.com${lib.id}`;
+    const items: SearchResultItem[] = [];
+
+    // Prose docs first, then code examples.
+    for (const info of ctx.infoSnippets ?? []) {
+      if (!info.content) continue;
+      items.push({
+        title: info.breadcrumb ?? lib.title ?? lib.id,
+        url: info.pageId ?? libUrl,
+        snippet: info.breadcrumb,
+        content: info.content,
+        source: 'context7',
+      });
+    }
+    for (const code of ctx.codeSnippets ?? []) {
+      const body = (code.codeList ?? [])
+        .map((c) => `\`\`\`${c.language ?? ''}\n${c.code ?? ''}\n\`\`\``)
+        .join('\n\n');
+      items.push({
+        title: code.codeTitle ?? code.pageTitle ?? lib.title ?? lib.id,
+        url: libUrl,
+        snippet: code.codeDescription,
+        content: body || undefined,
+        source: 'context7',
+      });
+    }
+
     return {
-      items: [
-        {
-          title: lib.title ?? lib.id,
-          url: `https://context7.com${lib.id}`,
-          content,
-          snippet: lib.description,
-          source: 'context7',
-        },
-      ],
+      items,
       routing: {
         provider: 'context7',
         reason: '',
