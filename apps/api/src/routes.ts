@@ -1,7 +1,7 @@
 import { type Intent, type SearchRequest, resolveCreds, runSearch } from '@search-router/core';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { authStub } from './auth.js';
+import { authenticate } from './auth.js';
 import { log, requestLogger } from './log.js';
 import { rateLimit } from './ratelimit.js';
 import { SCHEMAS } from './schemas.js';
@@ -56,7 +56,7 @@ api.use('/v1/*', rateLimit);
 
 for (const [segment, intent] of Object.entries(ROUTES)) {
   api.post(`/v1/${segment}`, async (c) => {
-    const auth = authStub(c);
+    const auth = await authenticate(c);
     if (!auth) return c.json({ error: 'unauthorized' }, 401);
 
     const json = await c.req.json().catch(() => ({}));
