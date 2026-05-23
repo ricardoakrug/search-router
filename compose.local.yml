@@ -13,3 +13,17 @@ services:
     env_file: .env
     ports:
       - '8787:8787'
+    # Healthy only once at least one provider key resolves (/ready → 200).
+    # An empty .env reports unhealthy. node:24-slim has no curl/wget — use Node's global fetch.
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:8787/ready').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s

@@ -71,6 +71,13 @@ curl -s -X POST localhost:8787/v1/search \
   -H 'content-type: application/json' -d '{"query":"blue widgets"}'
 ```
 
+The container is reported `healthy` only once at least one provider key resolves (it probes
+`/ready`). Prove a real search end to end with the smoke test (against the running container):
+
+```bash
+pnpm smoke          # asserts /ready 200, then a live /v1/search returns ≥1 result
+```
+
 ## Develop
 
 ```bash
@@ -83,8 +90,35 @@ pnpm dev:api       # API on :8787
 pnpm dev:mcp       # MCP server (talks to SEARCH_API_URL)
 ```
 
-Point a local MCP client at `node packages/mcp/dist/index.js` with `SEARCH_API_URL` + optional
-`INTERNAL_API_TOKEN` in its env.
+### Use it from Claude (MCP)
+
+The MCP server is stdio — the client spawns it and it forwards to the API over HTTP. After
+`pnpm build`, register it (leave `INTERNAL_API_TOKEN` unset for local own-use):
+
+Claude Desktop / any MCP client — add to the config:
+
+```json
+{
+  "mcpServers": {
+    "search-router": {
+      "command": "node",
+      "args": ["/ABS/PATH/to/core/packages/mcp/dist/index.js"],
+      "env": { "SEARCH_API_URL": "http://localhost:8787" }
+    }
+  }
+}
+```
+
+Claude Code CLI:
+
+```bash
+claude mcp add search-router \
+  -e SEARCH_API_URL=http://localhost:8787 \
+  -- node /ABS/PATH/to/core/packages/mcp/dist/index.js
+```
+
+The 8 tools (`web_search`, `answer`, `deep_research`, `scrape_url`, `crawl_site`, `social_search`,
+`serp`, `code_docs`) then appear in the client.
 
 ## License
 

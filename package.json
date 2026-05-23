@@ -14,7 +14,8 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "dev:api": "pnpm --filter @search-router/api dev",
-    "dev:mcp": "pnpm --filter @search-router/mcp dev"
+    "dev:mcp": "pnpm --filter @search-router/mcp dev",
+    "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
